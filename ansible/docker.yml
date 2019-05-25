@@ -1,0 +1,34 @@
+---
+- hosts: all
+  gather_facts: False
+  vars:
+    app_version: "1.0.0"
+
+  pre_tasks:
+    - name: Check if Python binary is present
+      raw: "test -e /usr/bin/python || (apt -q=2 update && apt -q=2 -y install python)"
+      become: True
+    - name: Gather facts
+      setup:
+
+  tasks:
+    - name: Install the Docker package
+      apt:
+        name: ["docker.io", "python-docker"]
+        update_cache: yes
+        cache_valid_time: "1200"
+      become: True
+    - name: Download the flask-demo-app Docker image
+      docker_image:
+        name: "ivuk/flask-demo-app:{{ app_version }}"
+        source: "pull"
+      become: True
+    - name: Run the flask-demo-app
+      docker_container:
+        name: flask-demo-app
+        image: "ivuk/flask-demo-app:{{ app_version }}"
+        state: "started"
+        restart_policy: "always"
+        ports:
+          - "5000:5000"
+      become: True

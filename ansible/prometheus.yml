@@ -1,0 +1,181 @@
+---
+- hosts: all
+  gather_facts: False
+  vars:
+    prom_version: "2.9.2"
+    prom_checksum: "sha256:19d29910fd0e51765d47b59b9276df016441ad4c6c48e3b27e5aa9acb5d1da26"
+    prom_target_host: "127.0.0.1:5000"
+
+  handlers:
+    - name: systemd daemon-reload
+      systemd:
+        daemon_reload: yes
+      become: True
+    - name: restart prometheus
+      systemd:
+        state: "restarted"
+        name: "prometheus"
+      become: True
+    - name: restart nginx
+      systemd:
+        state: "restarted"
+        name: "nginx"
+      become: True
+
+  pre_tasks:
+    - name: Check if Python binary is present
+      raw: "test -e /usr/bin/python || (apt -q=2 update && apt -q=2 -y install python)"
+      become: True
+    - name: Gather facts
+      setup:
+
+  tasks:
+    - name: Download the Prometheus binary
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prom_version }}/prometheus-{{ prom_version }}.linux-amd64.tar.gz"
+        dest: "/tmp/prometheus-{{ prom_version }}.linux-amd64.tar.gz"
+        checksum: "{{ prom_checksum }}"
+    - name: Unarchive the downloaded Prometheus archive
+      unarchive:
+        src: "/tmp/prometheus-{{ prom_version }}.linux-amd64.tar.gz"
+        dest: "/tmp"
+        remote_src: yes
+    - name: Copy the prometheus binary
+      copy:
+        src: "/tmp/prometheus-{{ prom_version }}.linux-amd64/prometheus"
+        dest: "/usr/local/bin/prometheus-{{ prom_version }}"
+        remote_src: yes
+        owner: "root"
+        group: "root"
+        mode: "0755"
+      become: True
+    - name: Symlink the prometheus binary
+      file:
+        src: "/usr/local/bin/prometheus-{{ prom_version }}"
+        dest: "/usr/local/bin/prometheus"
+        state: link
+      become: True
+    - name: Copy the promtool binary
+      copy:
+        src: "/tmp/prometheus-{{ prom_version }}.linux-amd64/prometheus"
+        dest: "/usr/local/bin/promtool-{{ prom_version }}"
+        remote_src: yes
+        owner: "root"
+        group: "root"
+        mode: "0755"
+      become: True
+    - name: Symlink the promtool binary
+      file:
+        src: "/usr/local/bin/promtool-{{ prom_version }}"
+        dest: "/usr/local/bin/promtool"
+        state: link
+      become: True
+    - name: Create the prometheus group
+      group:
+        name: "prometheus"
+        system: True
+      become: True
+    - name: Create the prometheus user
+      user:
+        name: "prometheus"
+        shell: "/usr/sbin/nologin"
+        create_home: False
+        system: True
+        group: "prometheus"
+      become: True
+    - name: Create the data directory for Prometheus
+      file:
+        path: "/var/lib/prometheus"
+        state: "directory"
+        mode: "0755"
+        owner: "prometheus"
+        group: "prometheus"
+      become: True
+    - name: Create the config directory for Prometheus
+      file:
+        path: "/etc/prometheus"
+        state: "directory"
+        mode: "0755"
+        owner: "root"
+        group: "prometheus"
+      become: True
+    - name: Copy the config file to Prometheus' config directory
+      template:
+        src: "templates/prometheus.yml.j2"
+        dest: "/etc/prometheus/prometheus.yml"
+        owner: "root"
+        group: "prometheus"
+        mode: "0640"
+      become: True
+      notify: "restart prometheus"
+    - name: Copy additional config files to Prometheus' config directory
+      copy:
+        src: "/tmp/prometheus-{{ prom_version }}.linux-amd64/{{ item }}"
+        dest: "/etc/prometheus"
+        remote_src: yes
+        owner: "root"
+        group: "prometheus"
+        mode: "0755"
+      with_items:
+        - "consoles"
+        - "console_libraries"
+      become: True
+    - name: Copy the Prometheus systemd service file
+      copy:
+        src: "files/prometheus.service"
+        dest: "/etc/systemd/system"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      notify: "systemd daemon-reload"
+      become: True
+    - name: Restart the Prometheus service
+      systemd:
+        state: "restarted"
+        daemon_reload: yes
+        name: "prometheus"
+        enabled: True
+      become: True
+    - name: Install nginx and ssl-cert packages
+      apt:
+        name: ["nginx", "ssl-cert"]
+        update_cache: yes
+        cache_valid_time: "1200"
+      become: True
+    - name: Copy the htpasswd file for NGINX
+      copy:
+        src: "files/htpasswd"
+        dest: "/etc/nginx/htpasswd"
+        owner: "root"
+        group: "www-data"
+        mode: "0640"
+      become: True
+    - name: Copy the NGINX vhost configuration
+      copy:
+        src: "files/nginx-prometheus"
+        dest: "/etc/nginx/sites-available/nginx-prometheus"
+        owner: "root"
+        group: "root"
+        mode: "0644"
+      become: True
+    - name: Disable the default vhost for NGINX
+      file:
+        path: "/etc/nginx/sites-enabled/default"
+        state: "absent"
+      notify: "restart nginx"
+      become: True
+    - name: Enable the Prometheus vhost for NGINX
+      file:
+        path: "/etc/nginx/sites-enabled/nginx-prometheus"
+        src: "/etc/nginx/sites-available/nginx-prometheus"
+        state: "link"
+      notify: "restart nginx"
+      become: True
+    - name: Restart NGINX
+      systemd:
+        state: "restarted"
+        name: "nginx"
+        enabled: True
+      become: True
+
+
