@@ -33,5 +33,5 @@ htpasswd -c ansible/files/htpasswd admin
 ```bash
 ansible-playbook -i '$DOIPADDRESS,' -u root prometheus.yml
 ```
-8. Check the web interface, NGINX should be running on ports 80 and 443 (HTTPS uses self-signed certificates).
+8. Check the web interface, NGINX should be running on ports 80 and 443 (HTTPS uses self-signed certificate)
 9. (Optional) if used in combination with flask-demo-app, update the `prom_target_host` variable in ansible/prometheus.yml to point to your app
