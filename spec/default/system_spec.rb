@@ -34,6 +34,11 @@ describe file('/usr/local/bin/promtool') do
   it { should be_symlink }
 end
 
+describe user('prometheus') do
+  it { should exist }
+  it { should have_login_shell '/usr/sbin/nologin' }
+end
+
 describe file('/var/lib/prometheus') do
   it { should be_directory }
   it { should be_mode '755' }
@@ -59,4 +64,8 @@ end
 
 describe file('/etc/nginx/htpasswd') do
   it { should be_file }
+end
+
+describe command('curl http://localhost') do
+    its(:stdout) { should contain('401 Authorization Required') }
 end
